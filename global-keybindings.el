@@ -46,4 +46,16 @@
                 (lambda () (interactive)
                   (wrap)))
 
+;; windmove navigation
+(global-set-key (kbd "<right>") 'windmove-right)
+
+(global-set-key (kbd "<left>") 'windmove-left)
+
+(global-set-key (kbd "<up>") 'windmove-up)
+
+(global-set-key (kbd "<down>") 'windmove-down)
+
+(global-set-key (kbd "C-c z") 'zeal-at-point)
+
+
 (provide 'global-keybindings)

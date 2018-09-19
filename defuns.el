@@ -178,19 +178,7 @@ This function could be on `comint-output-filter-functions' or bound to a key."
       path
     (remove-trailing-slashes path)))
 
-(defun launch-terminal ()
-  (interactive (let ((proj (cyanide-get-one-by-slot cyanide-current-project
-                                                    cyanide-project-collection
-                                                    ":id"
-                                                    'eq)))
-                 ;; (call-process-shell-command "terminator&" nil 0)
-                 (call-process-shell-command
-                  (concat "cd"
-                          " "
-                          (oref proj :path)
-                          ";"
-                          " terminator -m & ") nil 0)
-                 nil))) ; return nil
+(defvar terminal-command "terminator -m &")
 
 (defun walk-window-buffers (fun &optional minibuf all-frames)
   """ Execute function fun on all buffers in current frame. If minibuf is
@@ -331,6 +319,20 @@ This function could be on `comint-output-filter-functions' or bound to a key."
     (delq 'js2-mode spacemacs-indent-sensitive-modes)
     (when (bound-and-true-p return-orig)
       (define-key js2-mode-map (kbd "<return>") return-orig))))
+
+(defun pylint-settings ()
+  (flycheck-mode 1)
+  (semantic-mode 1)
+  (setq
+   flycheck-checker
+   'python-pylint
+   flycheck-checker-error-threshold
+   900
+   flycheck-pylintrc
+   (concat
+    (cyanide-project-oref
+     :path)
+    ".pylintrc")))
 
 (defun lint-file-with-semistandard ()
   (interactive)
@@ -558,19 +560,95 @@ Custom node interpreter.
   (fset 'save-buffer (lambda () (interactive)
                        (message "ephemeral buffer: skipped save"))))
 
-(defun cyanide-project-initialize ()
-  (interactive)
-  (let ((proj-path (directory-file-name (read-file-name "project directory: ")))
-        (view (read-string "default-view: "))
-        (name nil)
-        init-path)
-    (setq name (file-name-nondirectory proj-path))
-    (setq init-path (concat proj-path "/.cy/init.el" ))
-    (write-file init-path)
-    (switch-to-buffer "*tmp*")
-    (insert (print `(cyanide-project :id (quote ,(intern name))
-                                     :display-name ,name
-                                     :default-view (quote ,(intern view)))))
-    (kill-buffer "*tmp*")))
+;; TODO allow designating a buffer/window to switch to and send input
+(defun region-to-shell ()
+  (kill-ring-save (region-beginning) (region-end))
+  (setq orig-buffer  (window-buffer (selected-window)))
+  (switch-to-buffer "*shell*")
+  (end-of-buffer)
+  (yank)
+  (comint-send-input))
+
+(defvar previous-register nil)
+
+(defun next-register ()
+  (let ((registers (mapcar 'car register-alist)))
+    (if (eq nil registers)
+        nil
+      (when (not (bound-and-true-p previous-register))
+        (setq previous-register
+              (car (last registers))))
+      (let ((pos (+ 1 (cl-position previous-register registers))))
+        (let ((elt (nth pos register-alist)))
+          (if (eq nil elt)
+              (setq previous-register (caar register-alist))
+            (setq previous-register (car elt))))))))
+
+
+;; TODO Write a seek-register-point-previous.
+;; TODO `next-register' should be able to start at an arbitrary position in
+;;      `register-alist' and return the next value.
+;; TODO Towards that end, `previous-register' should be passed into
+;;      next-register as an argument, rather than a global. Only the
+;;      highest-level function should touch globals.
+;; TODO consider making START-POINT required, must always be passed in, to
+;;      simplify this.
+;; TODO does this handle a START_POINT in the middle of `register-alist'?
+;; TODO next-register should return (reg . value)
+;;
+;; Scan each register in `register-alist' until we have scanned the entire list,
+;; or we find a register which contains a marker.
+;;
+;; A) If the START-POINT matches MATCH-FUNC, return a list. The first element of
+;;    that list is the register which matched. The second element of that list
+;;    is the value stored in the register which matched.
+;;
+;; B) If the START-POINT does not match MATCH-FUNC, scan the `next-register'
+;;    after START-POINT.
+;;
+;; C) If the NEXT-POINT matches MATCH-FUNC, return a list. The list returned
+;;    should be the same as detailed in section A above.
+;; 
+;; D) If NEXT-POINT does not match MATCH-FUNC, scan the `next-register' after
+;;    NEXT-POINT.
+;;
+;; E) If START-POINT equals NEXT-POINT, we have scanned the entire collection,
+;;    done a full loop, and not matched anything. In this case, we return nil.
+(defun seek-register-point-next (match-func &optional start-point next-point match-func)
+  (when (not (bound-and-true-p start-point))
+    (setq start-point (next-register)))
+  (if (bound-and-true-p next-point)
+      (if (not (eq start-point next-point))
+          (if (funcall match-func (cdar next-point))
+              next-point ; C
+            (seek-register-point-next match-func start-point (next-register))) ; D
+        nil) ; E
+    (if (funcall match-func (cdar start-point))
+        start-point ; A 
+      (seek-register-point-next match-func start-point (next-register))))) ; B
+
+(cyanide-task
+ :id 'terminal-in-project
+ :display-name "terminal"
+ :description "launch terminal in project"
+ :func (lambda ()
+         (interactive)
+         (let ((default-directory (cyanide-project-oref :path)))
+           (call-process-shell-command
+            terminal-command))))
+
+(cyanide-task
+ :id 'netstat
+ :display-name "netstat -lntp"
+ :description "view listening processes on local machine"
+ :func (lambda ()
+         (interactive)
+         (cd-proj-root)
+         (let ((default-directory (cyanide-project-oref :path))
+               (async-shell-command-buffer 'confirm-kill-process))
+           (async-shell-command
+            (read-string "Async shell command: "
+                         "netstat -lntp")
+            "*netstat*"))))
 
 (provide 'defuns)
