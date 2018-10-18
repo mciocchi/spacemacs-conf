@@ -560,15 +560,6 @@ Custom node interpreter.
   (fset 'save-buffer (lambda () (interactive)
                        (message "ephemeral buffer: skipped save"))))
 
-;; TODO allow designating a buffer/window to switch to and send input
-(defun region-to-shell ()
-  (kill-ring-save (region-beginning) (region-end))
-  (setq orig-buffer  (window-buffer (selected-window)))
-  (switch-to-buffer "*shell*")
-  (end-of-buffer)
-  (yank)
-  (comint-send-input))
-
 (defvar previous-register nil)
 
 (defun next-register ()
@@ -627,28 +618,61 @@ Custom node interpreter.
         start-point ; A 
       (seek-register-point-next match-func start-point (next-register))))) ; B
 
-(cyanide-task
- :id 'terminal-in-project
- :display-name "terminal"
- :description "launch terminal in project"
- :func (lambda ()
-         (interactive)
-         (let ((default-directory (cyanide-project-oref :path)))
-           (call-process-shell-command
-            terminal-command))))
+(defun use-fixed-node-style-indentation ()
+  (progn
+    (message "Using fixed node style indentation...")
+    (when (boundp 'tab-width)
+      (setq-default tab-width-orig tab-width))
+    (when (boundp 'js2-basic-offset)
+      (setq-default js2-basic-offset-orig js2-basic-offset))
+    (when (boundp 'indent-tabs-mode)
+      (setq indent-tabs-mode-orig indent-tabs-mode))
+    (when (boundp 'fill-column)
+      (setq fill-column-orig fill-column))
+    (setq-default tab-width 2)
+    (setq js2-basic-offset 2)
 
-(cyanide-task
- :id 'netstat
- :display-name "netstat -lntp"
- :description "view listening processes on local machine"
- :func (lambda ()
-         (interactive)
-         (cd-proj-root)
-         (let ((default-directory (cyanide-project-oref :path))
-               (async-shell-command-buffer 'confirm-kill-process))
-           (async-shell-command
-            (read-string "Async shell command: "
-                         "netstat -lntp")
-            "*netstat*"))))
+    (add-hook 'js2-mode-hook
+              (function (lambda ()
+                          (setq js2-basic-offset 2))))
+
+    (add-hook 'js2-mode-hook
+              (lambda ()
+                (setq-local indent-line-function 'tab-to-tab-stop)))
+
+    (add-hook 'js2-mode-hook
+              'disable-spacemacs-js2-autoindent)
+
+    (add-to-list 'spacemacs-indent-sensitive-modes 'js2-mode)
+
+    (setq-default indent-tabs-mode nil)
+    (setq-default fill-column 80)))
+
+(defun tear-down-fixed-node-style-indentation ()
+  (progn
+    (message "Tearing down fixed node style indentation...")
+
+    (when (boundp 'tab-width-orig)
+      (setq-default tab-width tab-width-orig))
+
+    (when (boundp 'js2-basic-offset-orig)
+      (setq-default js2-basic-offset js2-basic-offset-orig))
+
+    (remove-hook 'js2-mode-hook
+                 (function (lambda ()
+                             (setq js2-basic-offset 2))))
+
+    (when (boundp 'indent-tabs-mode-orig)
+      (setq-default indent-tabs-mode indent-tabs-mode-orig))
+
+    (when (boundp 'fill-column-orig)
+      (setq-default fill-column fill-column-orig))
+
+    ;; re-enable spacemacs autoindentation
+    (remove-hook 'js2-mode-hook
+                 'disable-spacemacs-js2-autoindent)
+    (delq 'js2-mode spacemacs-indent-sensitive-modes)
+    (when (bound-and-true-p return-orig)
+      (define-key js2-mode-map (kbd "<return>") return-orig))))
 
 (provide 'defuns)

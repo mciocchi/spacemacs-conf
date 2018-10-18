@@ -1,4 +1,5 @@
 (require 'defuns)
+(require 'tasks)
 (require 'global-keybindings)
 
 ;; emacs-lisp-mode
